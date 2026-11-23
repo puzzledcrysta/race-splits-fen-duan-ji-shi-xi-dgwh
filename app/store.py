@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS reviews (
   decision TEXT NOT NULL, note TEXT NOT NULL, changed TEXT NOT NULL,
   PRIMARY KEY(run_id,version)
 );
+CREATE TABLE IF NOT EXISTS claims (
+  run_id TEXT NOT NULL REFERENCES runs(id), book_key TEXT NOT NULL,
+  card TEXT, decided TEXT NOT NULL,
+  PRIMARY KEY(run_id,book_key)
+);
 """
 
 

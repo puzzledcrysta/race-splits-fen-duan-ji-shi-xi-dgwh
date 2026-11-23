@@ -50,6 +50,11 @@ class Review(BaseModel):
     note: str = Field(default='',max_length=500)
 
 
+class Claim(BaseModel):
+    book_key: str = Field(min_length=1,max_length=80)
+    card: str | None = Field(default=None,max_length=80)
+
+
 def read_sample(name):
     choices = {'shift':'shift.csv','external':'external.csv'}
     if name not in choices:

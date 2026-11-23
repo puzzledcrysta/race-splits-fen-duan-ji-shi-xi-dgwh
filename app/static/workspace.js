@@ -24,7 +24,7 @@ function filterTable() {
   const query = filter.value.trim().toLocaleLowerCase();
   const selected = rows.filter(row => {
     if (stage === 'reconcile' && differences.checked && row.code === 'MATCH') return false;
-    return !query || [row.key,row.id,row.line,row.code,settings.reasons[row.code],row.detail,row.note,row.kind]
+    return !query || [row.key,row.book_key,row.id,row.line,row.code,settings.reasons[row.code],row.detail,row.note,row.kind]
       .some(value => String(value ?? '').toLocaleLowerCase().includes(query));
   });
   byId('shown').textContent = `${selected.length} / ${rows.length}`;
@@ -40,7 +40,47 @@ function notice(message, error = false) {
 }
 
 function tag(code) {
-  return el('span', settings.reasons[code] || code, code === 'MATCH' ? 'state' : 'state problem');
+  const settled = code === 'MATCH' || code === 'ZERO_CLAIM' || code === 'KEY_VERIFIED';
+  return el('span', settings.reasons[code] || code, settled ? 'state' : 'state problem');
+}
+
+function claimControl(row) {
+  if (row.code !== 'KEY_AMBIGUOUS') return '';
+  if (row.book_key === null) return el('span', `候选外部号 ${row.candidates.join('、')}`, 'state problem');
+  const wrap = el('div');
+  const select = el('select');
+  const placeholder = new Option('选择计时卡', '');
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.append(placeholder);
+  for (const card of row.candidates) {
+    const option = new Option(`认领为 ${card}`, card);
+    option.dataset.card = card;
+    select.append(option);
+  }
+  select.append(new Option('不认领此笔', ''));
+  const button = el('button', '核实', 'btn');
+  button.type = 'button';
+  button.addEventListener('click', async () => {
+    const chosen = select.selectedOptions[0];
+    if (!chosen || chosen === placeholder) {
+      notice('请选择归属结论', true);
+      return;
+    }
+    button.disabled = true;
+    try {
+      const id = result.manifest.run_id;
+      setRun(await query(`/api/reconcile/${id}/claims`, {book_key: row.book_key, card: chosen.dataset.card ?? null}));
+      notice('归属已核实');
+      await render();
+    } catch (error) {
+      notice(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  wrap.append(select, button);
+  return wrap;
 }
 
 
@@ -83,7 +123,7 @@ function setRun(report) {
   byId('run-id').title = id;
   topExport.hidden = false;
   topExport.href = `/api/export/${id}`;
-  const values = {...result.counts, delta: result.book.delta, mismatched: result.book.mismatched};
+  const values = {...result.counts, delta: result.book.delta, mismatched: result.book.mismatched, pending: result.book.pending ?? 0};
   for (const cell of document.querySelectorAll('[data-count]')) cell.textContent = values[cell.dataset.count];
   live.textContent = `批次 ${id.slice(0, 9)} · ${result.balanced ? '记录已对齐' : '记录数不符'}`;
 }
@@ -111,7 +151,7 @@ async function render() {
       view = [key, line, ['判定', row => tag(row.code)], ['说明', 'detail'], ['字段', raw]];
       rows = [...result.quarantine, ...result.suppressed].sort((a,b) => a.line-b.line);
     } else if (stage === 'reconcile') {
-      view = [key, ['实际', 'amount', 'num'], ['外部账', 'reference', 'num'], ['差值', 'delta', 'num'], ['外部行', 'book_line', 'num'], ['结论', row => tag(row.code)]];
+      view = [key, ['外部原号', 'book_key'], ['实际', 'amount', 'num'], ['外部账', 'reference', 'num'], ['差值', 'delta', 'num'], ['外部行', 'book_line', 'num'], ['结论', row => tag(row.code)], ['归属核实', claimControl]];
       rows = [...result.book.rows].sort((a,b) => Number(a.code === 'MATCH') - Number(b.code === 'MATCH'));
     } else if (stage === 'intake') {
       const intake = await query('/api/intake', inputs);
